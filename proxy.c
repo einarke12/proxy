@@ -17,63 +17,176 @@
  * Function prototypes
  */
 int parse_uri(char *uri, char *target_addr, char *path, int  *port);
+void proxy(int connfd);
 void format_log_entry(char *logstring, struct sockaddr_in *sockaddr, char *uri, int size);
-void read_requesthdrs(rio_t *rp)
+void read_requesthdrs(rio_t *rp);
+void serve_static(int fd, char *filename, int filesize);
+void get_filetype(char *filename, char *filetype);
+void serve_dynamic(int fd, char *filename, char *cgiargs);
+void clienterror(int fd, char *cause, char *errnum,
+            char *shortmsg, char *longmsg);
+
 /*
- * echo - Temp for simple echo server
+ * Proxy server core
  */
 void prox(int connfd) 
 {
-    size_t n; 
-    char buf[MAXLINE], uri[MAXLINE], filename[MAXLINE], cgiargs[MAXLINE]; 
-    char method[MAXLINE], version[MAXLINE];
+    int is_static;
+    struct stat sbuf;  
+    char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
+    char filename[MAXLINE], cgiargs[MAXLINE];
     rio_t rio;
 
     /* Read request line and headers */
-    Rio_readinitb(&rio, connfd);
+    Rio_readinitb(&rio, fd);
     Rio_readlineb(&rio, buf, MAXLINE);
-    sscanf(buf, "%s %s %s" , method, uri, version);
-
-    while((n = Rio_readlineb(&rio, buf, MAXLINE)) != 0) { //line:netp:echo:eof
-	printf("server received %d bytes\n", (int)n);
-	Rio_writen(connfd, buf, n);
+    sscanf(buf, "%s %s %s", method, uri, version);
+    
+    if (strcasecmp(method, "GET")) {
+        clienterror(fd, method, "501", "Not Implemented",
+                    "Proxy does not implement this method");
+        return;
     }
+    read_requesthdrs(&rio);
+
+    /* Parse URI from GET request */
+    is_static = parse_uri(uri, filename, cgiargs);
+    if (stat(filename, &sbuf) < 0) {
+    clienterror(fd, filename, "404", "Not found",
+                    "Proxy couldn’t find this file");
+    return;
+    }
+
+    if (is_static) { /* Serve static content */
+        if (!(S_ISREG(sbuf.st_mode)) || !(S_IRUSR & sbuf.st_mode)) {
+            clienterror(fd, filename, "403", "Forbidden",
+                        "Proxy couldn’t read the file");
+        return;
+        }
+        serve_static(fd, filename, sbuf.st_size);
+    }
+    
+    else { /* Serve dynamic content */
+        if (!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode)) {
+            clienterror(fd, filename, "403", "Forbidden",
+                        "Proxy couldn’t run the CGI program");
+            return;
+        }
+        serve_dynamic(fd, filename, cgiargs);
+    }
+}
+
+void clienterror(int fd, char *cause, char *errnum,
+                char *shortmsg, char *longmsg) {
+    char buf[MAXLINE], body[MAXBUF];
+
+    /* Build the HTTP response body */
+    sprintf(body, "<html><title>Tiny Error</title>");
+    sprintf(body, "%s<body bgcolor=""ffffff"">\r\n", body);
+    sprintf(body, "%s%s: %s\r\n", body, errnum, shortmsg);
+    sprintf(body, "%s<p>%s: %s\r\n", body, longmsg, cause);
+    sprintf(body, "%s<hr><em>The Tiny Web server</em>\r\n", body);
+
+    /* Print the HTTP response */
+    sprintf(buf, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
+    Rio_writen(fd, buf, strlen(buf));
+    sprintf(buf, "Content-type: text/html\r\n");
+    Rio_writen(fd, buf, strlen(buf));
+    sprintf(buf, "Content-length: %d\r\n\r\n", (int)strlen(body));
+    Rio_writen(fd, buf, strlen(buf));
+    Rio_writen(fd, body, strlen(body));
+}
+
+void read_requesthdrs(rio_t *rp)
+{  
+    char buf[MAXLINE];
+
+    Rio_readlineb(rp, buf, MAXLINE);
+    while(strcmp(buf, "\r\n")) {
+        Rio_readlineb(rp, buf, MAXLINE);
+        printf("%s", buf);
+    }
+    return;
+}
+
+void serve_static(int fd, char *filename, int filesize)
+{
+    int srcfd;
+    char *srcp, filetype[MAXLINE], buf[MAXBUF];
+
+    /* Send response headers to client */
+    get_filetype(filename, filetype);
+    sprintf(buf, "HTTP/1.0 200 OK\r\n");
+    sprintf(buf, "%sServer: Proxy Server\r\n", buf);
+    sprintf(buf, "%sContent-length: %d\r\n", buf, filesize);
+    sprintf(buf, "%sContent-type: %s\r\n\r\n", buf, filetype);
+    Rio_writen(fd, buf, strlen(buf));
+
+    /* Send response body to client */
+    srcfd = Open(filename, O_RDONLY, 0);
+    srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+    Close(srcfd);
+    Rio_writen(fd, srcp, filesize);
+    Munmap(srcp, filesize);
+}
+
+/*
+ * get_filetype - derive file type from file name
+ */
+void get_filetype(char *filename, char *filetype)
+{
+    if (strstr(filename, ".html"))
+        strcpy(filetype, "text/html");
+    else if (strstr(filename, ".gif"))
+        strcpy(filetype, "image/gif");
+    else if (strstr(filename, ".jpg"))
+        strcpy(filetype, "image/jpeg");
+    else
+        strcpy(filetype, "text/plain");
+}
+
+void serve_dynamic(int fd, char *filename, char *cgiargs)
+{
+    char buf[MAXLINE], *emptylist[] = { NULL };
+
+    /* Return first part of HTTP response */
+    sprintf(buf, "HTTP/1.0 200 OK\r\n");
+    Rio_writen(fd, buf, strlen(buf));
+    sprintf(buf, "Server: Tiny Web Server\r\n");
+    Rio_writen(fd, buf, strlen(buf));
+
+    if (Fork() == 0) { /* child */
+    /* Real server would set all CGI vars here */
+        setenv("QUERY_STRING", cgiargs, 1);
+        Dup2(fd, STDOUT_FILENO); /* Redirect stdout to client */
+        Execve(filename, emptylist, environ); /* Run CGI program */
+    }
+    Wait(NULL); /* Parent waits for and reaps child */
 }
 
 /* 
  * main - Main routine for the proxy program 
  */
-int main(int argc, char **argv) 
+int main(int argc, char **argv)
 {
-    int listenfd, connfd, port;
-    socklen_t clientlen;
+    int listenfd, connfd, port, clientlen;
     struct sockaddr_in clientaddr;
-    struct hostent *hp;
-    char *haddrp;
-    if (argc != 2) 
-    {
-    	fprintf(stderr, "usage: %s <port>\n", argv[0]);
-    	exit(0);
+ 
+    /* Check command line args */
+    if (argc != 2) {
+        fprintf(stderr, "usage: %s <port>\n", argv[0]);
+        exit(1);
     }
     port = atoi(argv[1]);
 
     listenfd = Open_listenfd(port);
-    while (1)      
-    {
-        // TO DO: needs a condition that breaks out of the loop
-    	clientlen = sizeof(clientaddr);
-    	connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
-
-    	/* Determine the domain name and IP address of the client */
-    	hp = Gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, 
-    			   sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-    	haddrp = inet_ntoa(clientaddr.sin_addr);
-    	printf("server connected to %s (%s)\n", hp->h_name, haddrp);
-
-    	prox(connfd);
-    	Close(connfd);
+    while (1) {
+        clientlen = sizeof(clientaddr);
+        connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
+        
+        proxy(connfd);
+        Close(connfd);
     }
-    exit(0);
 }
 
 
@@ -158,11 +271,11 @@ void format_log_entry(char *logstring, struct sockaddr_in *sockaddr,
     // creating a new filepointer to the log file 
     FILE *file; 
     file = fopen("proxy.log", "a+"); 
-    fprintf(file, logstring, "%s: %d.%d.%d.%d %s", time_str, a, b, c, d, uri); 
+    fprintf(file, '\n',  logstring, "%s: %d.%d.%d.%d %s", time_str, a, b, c, d, uri); 
     fclose(file); 
-    
+
     /* Return the formatted log entry string */
-    //sprintf(logstring, "%s: %d.%d.%d.%d %s", time_str, a, b, c, d, uri);
+    sprintf(logstring, "%s: %d.%d.%d.%d %s", time_str, a, b, c, d, uri);
 }
 
 
