@@ -2,8 +2,9 @@
  * proxy.c - CS:APP Web proxy
  *
  * TEAM MEMBERS:
- *     Andrew Carnegie, ac00@cs.cmu.edu 
- *     Harry Q. Bovik, bovik@cs.cmu.edu
+ *     Einar Karl Einarsson, einarke12@ru.is 
+ *     Unnar Kristjánsson, unnar12@ru.is
+ *     Aron Bachmann Árnason, arona12@ru.is
  * 
  * IMPORTANT: Give a high level description of your code here. You
  * must also provide a header comment at the beginning of each
@@ -17,17 +18,22 @@
  */
 int parse_uri(char *uri, char *target_addr, char *path, int  *port);
 void format_log_entry(char *logstring, struct sockaddr_in *sockaddr, char *uri, int size);
-
+void read_requesthdrs(rio_t *rp)
 /*
  * echo - Temp for simple echo server
  */
-void echo(int connfd) 
+void prox(int connfd) 
 {
     size_t n; 
-    char buf[MAXLINE]; 
+    char buf[MAXLINE], uri[MAXLINE], filename[MAXLINE], cgiargs[MAXLINE]; 
+    char method[MAXLINE], version[MAXLINE];
     rio_t rio;
 
+    /* Read request line and headers */
     Rio_readinitb(&rio, connfd);
+    Rio_readlineb(&rio, buf, MAXLINE);
+    sscanf(buf, "%s %s %s" , method, uri, version);
+
     while((n = Rio_readlineb(&rio, buf, MAXLINE)) != 0) { //line:netp:echo:eof
 	printf("server received %d bytes\n", (int)n);
 	Rio_writen(connfd, buf, n);
@@ -64,7 +70,7 @@ int main(int argc, char **argv)
     	haddrp = inet_ntoa(clientaddr.sin_addr);
     	printf("server connected to %s (%s)\n", hp->h_name, haddrp);
 
-    	echo(connfd);
+    	prox(connfd);
     	Close(connfd);
     }
     exit(0);
@@ -149,8 +155,14 @@ void format_log_entry(char *logstring, struct sockaddr_in *sockaddr,
     d = host & 0xff;
 
 
+    // creating a new filepointer to the log file 
+    FILE *file; 
+    file = fopen("proxy.log", "a+"); 
+    fprintf(file, logstring, "%s: %d.%d.%d.%d %s", time_str, a, b, c, d, uri); 
+    fclose(file); 
+    
     /* Return the formatted log entry string */
-    sprintf(logstring, "%s: %d.%d.%d.%d %s", time_str, a, b, c, d, uri);
+    //sprintf(logstring, "%s: %d.%d.%d.%d %s", time_str, a, b, c, d, uri);
 }
 
 
