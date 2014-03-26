@@ -17,7 +17,7 @@
  * Function prototypes
  */
 int parse_uri(char *uri, char *target_addr, char *path, int  *port);
-void proxy(int connfd);
+void proxy(int fd);
 void format_log_entry(char *logstring, struct sockaddr_in *sockaddr, char *uri, int size);
 void read_requesthdrs(rio_t *rp);
 void serve_static(int fd, char *filename, int filesize);
@@ -29,7 +29,7 @@ void clienterror(int fd, char *cause, char *errnum,
 /*
  * Proxy server core
  */
-void prox(int connfd) 
+void prox(int fd) 
 {
     int is_static;
     struct stat sbuf;  
@@ -189,7 +189,6 @@ int main(int argc, char **argv)
     }
 }
 
-
 /*
  * parse_uri - URI parser
  * 
@@ -198,6 +197,35 @@ int main(int argc, char **argv)
  * pathname must already be allocated and should be at least MAXLINE
  * bytes. Return -1 if there are any problems.
  */
+int parse_uri(char *uri, char *filename, char *cgiargs)
+{
+    char *ptr;
+
+    if (!strstr(uri, "cgi-bin")) { /* Static content */
+        strcpy(cgiargs, "");
+        strcpy(filename, ".");
+        strcat(filename, uri);
+        if (uri[strlen(uri)-1] == ’/’)
+            strcat(filename, "home.html");
+            return 1;
+        }
+    
+    else { /* Dynamic content */
+        ptr = index(uri, ’?’);
+
+        if (ptr) {
+            strcpy(cgiargs, ptr+1);
+            *ptr = ’\0’;
+        }
+        else
+            strcpy(cgiargs, "");
+            strcpy(filename, ".");
+            strcat(filename, uri);
+            return 0;
+    }
+}
+
+/*
 int parse_uri(char *uri, char *hostname, char *pathname, int *port)
 {
     char *hostbegin;
@@ -211,19 +239,19 @@ int parse_uri(char *uri, char *hostname, char *pathname, int *port)
     	return -1;
     }
        
-    /* Extract the host name */
+    // Extract the host name 
     hostbegin = uri + 7;
     hostend = strpbrk(hostbegin, " :/\r\n\0");
     len = hostend - hostbegin;
     strncpy(hostname, hostbegin, len);
     hostname[len] = '\0';
     
-    /* Extract the port number */
-    *port = 80; /* default */
+    // Extract the port number 
+    *port = 80; /* default 
     if (*hostend == ':')   
 	*port = atoi(hostend + 1);
     
-    /* Extract the path */
+    /* Extract the path 
     pathbegin = strchr(hostbegin, '/');
     if (pathbegin == NULL) {
 	pathname[0] = '\0';
@@ -234,7 +262,7 @@ int parse_uri(char *uri, char *hostname, char *pathname, int *port)
     }
 
     return 0;
-}
+}*/
 
 /*
  * format_log_entry - Create a formatted log entry in logstring. 
