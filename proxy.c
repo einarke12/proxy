@@ -16,13 +16,14 @@
 /*
  * Function prototypes
  */
-int parse_uri(char *uri, char *target_addr, char *path, int  *port);
+int parse_uri(char *uri, char *filename, char *cgiargs);
 void proxy(int fd);
 void format_log_entry(char *logstring, struct sockaddr_in *sockaddr, char *uri, int size);
 void read_requesthdrs(rio_t *rp);
 void serve_static(int fd, char *filename, int filesize);
 void get_filetype(char *filename, char *filetype);
 void serve_dynamic(int fd, char *filename, char *cgiargs);
+
 void clienterror(int fd, char *cause, char *errnum,
             char *shortmsg, char *longmsg);
 
@@ -152,7 +153,7 @@ void serve_dynamic(int fd, char *filename, char *cgiargs)
     /* Return first part of HTTP response */
     sprintf(buf, "HTTP/1.0 200 OK\r\n");
     Rio_writen(fd, buf, strlen(buf));
-    sprintf(buf, "Server: Tiny Web Server\r\n");
+    sprintf(buf, "Server: Proxy  Server\r\n");
     Rio_writen(fd, buf, strlen(buf));
 
     if (Fork() == 0) { /* child */
@@ -184,7 +185,7 @@ int main(int argc, char **argv)
         clientlen = sizeof(clientaddr);
         connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
         
-        proxy(connfd);
+        prox(connfd);
         Close(connfd);
     }
 }
@@ -205,17 +206,17 @@ int parse_uri(char *uri, char *filename, char *cgiargs)
         strcpy(cgiargs, "");
         strcpy(filename, ".");
         strcat(filename, uri);
-        if (uri[strlen(uri)-1] == ’/’)
+        if (uri[strlen(uri)-1] == '/')
             strcat(filename, "home.html");
             return 1;
         }
     
     else { /* Dynamic content */
-        ptr = index(uri, ’?’);
+        ptr = index(uri, '?');
 
         if (ptr) {
             strcpy(cgiargs, ptr+1);
-            *ptr = ’\0’;
+            *ptr = '\0';
         }
         else
             strcpy(cgiargs, "");
@@ -247,11 +248,11 @@ int parse_uri(char *uri, char *hostname, char *pathname, int *port)
     hostname[len] = '\0';
     
     // Extract the port number 
-    *port = 80; /* default 
+    *port = 80;  default 
     if (*hostend == ':')   
 	*port = atoi(hostend + 1);
     
-    /* Extract the path 
+     Extract the path 
     pathbegin = strchr(hostbegin, '/');
     if (pathbegin == NULL) {
 	pathname[0] = '\0';
