@@ -25,7 +25,7 @@ void format_log_entry(char *logstring, struct sockaddr_in *sockaddr, char *uri, 
  */
 void prox(int fd) 
 {
-    int size 10;
+    int size = 10;
     int serverfd;
     struct stat sbuf;  
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
@@ -39,7 +39,7 @@ void prox(int fd)
     
     char parse_hostname[MAXLINE];
     char parse_port[MAXLINE];
-    if (parse_uri(uri, parse_hostname, pathname, parse_port) == -1){ 
+    if (parse_uri(uri, parse_hostname, pathname, &parse_port) == -1){ 
         printf("Unable to parse the URI!\n");
         return 0;
     }
@@ -50,7 +50,7 @@ void prox(int fd)
         return;
     }
     
-    if ( (serverfd = open_clientfd(parse_hostname, parse_port)) < 0){
+    if ( (serverfd = open_clientfd(parse_hostname, &parse_port)) < 0){
             printf("Unable to connect to web server! \n");
             Close(serverfd);
         return 0;
