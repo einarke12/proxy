@@ -19,12 +19,6 @@
 int parse_uri(char *uri, char *hostname, char *pathname, int *port);
 void proxy(int fd);
 void format_log_entry(char *logstring, struct sockaddr_in *sockaddr, char *uri, int size);
-void read_requesthdrs(rio_t *rp);
-void serve_static(int fd, char *filename, int filesize);
-void get_filetype(char *filename, char *filetype);
-void serve_dynamic(int fd, char *filename, char *cgiargs);
-void clienterror(int fd, char *cause, char *errnum,
-            char *shortmsg, char *longmsg);
 
 /*
  * Proxy server core
@@ -42,9 +36,6 @@ void prox(int fd)
     Rio_readinitb(&rio, fd);
     Rio_readlineb(&rio, buf, MAXLINE);
     sscanf(buf, "%s %s %s", method, uri, version);
-
-    format_log_entry(logstring, struct sockaddr_in *sockaddr, 
-              uri, int size)
     
     char parse_hostname[MAXLINE];
     char parse_port[MAXLINE];
